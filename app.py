@@ -21,6 +21,26 @@ GREEN = "#20c997"
 RED = "#ff6b81"
 
 
+def human_size(value):
+    if not value:
+        return "—"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    size = float(value)
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+
+
+def human_time(seconds):
+    if seconds is None or seconds < 0:
+        return "—"
+    seconds = int(seconds)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+
+
 class DownloadCenter(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -35,6 +55,7 @@ class DownloadCenter(tk.Tk):
         self.quality = tk.StringVar(value="بهترین کیفیت")
         self.cookies = tk.StringVar()
         self.status = tk.StringVar(value="آماده دریافت لینک شما")
+        self.stats = tk.StringVar(value="حجم: —   سرعت: —   زمان باقی‌مانده: —")
         self.progress = tk.DoubleVar(value=0)
         self._setup_style()
         self._build_ui()
@@ -108,6 +129,8 @@ class DownloadCenter(tk.Tk):
         self._label(left, "آماده دریافت لینک شما", 10, MUTED).pack(anchor="e")
         self.status_label = self._label(left, self.status.get(), 11, TEXT)
         self.status_label.pack(anchor="e", pady=(4, 18))
+        self.stats_label = self._label(left, self.stats.get(), 10, MUTED)
+        self.stats_label.pack(anchor="e", pady=(0, 14))
         self._button(left, "شروع دانلود", self.start_download, primary=True).pack(fill="x")
         self._button(left, "پاک‌کردن صف", self.clear_log).pack(fill="x", pady=(8, 0))
 
@@ -134,6 +157,7 @@ class DownloadCenter(tk.Tk):
         self.log.delete("1.0", "end")
         self.log.configure(state="disabled")
         self.progress.set(0)
+        self.stats.set("حجم: —   سرعت: —   زمان باقی‌مانده: —")
 
     def write_log(self, text):
         self.log.configure(state="normal")
@@ -181,7 +205,10 @@ class DownloadCenter(tk.Tk):
         if data.get("status") == "downloading":
             total = data.get("total_bytes") or data.get("total_bytes_estimate") or 0
             if total:
-                self.events.put(("progress", data.get("downloaded_bytes", 0) * 100 / total, data.get("_percent_str", "")))
+                downloaded = data.get("downloaded_bytes", 0)
+                speed = data.get("speed")
+                eta = data.get("eta")
+                self.events.put(("progress", downloaded * 100 / total, data.get("_percent_str", ""), downloaded, total, speed, eta))
 
     def _drain_events(self):
         try:
@@ -189,6 +216,7 @@ class DownloadCenter(tk.Tk):
                 event = self.events.get_nowait()
                 if event[0] == "progress":
                     self.progress.set(event[1]); self.status.set(f"در حال دانلود {event[2]}")
+                    self.stats.set(f"حجم: {human_size(event[3])} / {human_size(event[4])}   سرعت: {human_size(event[5])}/s   زمان باقی‌مانده: {human_time(event[6])}")
                 elif event[0] == "log": self.write_log(event[1])
                 elif event[0] == "done": self.running = False; self.progress.set(100); self.status.set(event[1]); self.write_log(event[1]); messagebox.showinfo("تمام شد", event[1])
                 elif event[0] == "error": self.running = False; self.status.set("دانلود ناموفق بود"); self.write_log("خطا: " + event[1]); messagebox.showerror("خطا در دانلود", event[1])
