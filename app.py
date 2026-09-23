@@ -1,4 +1,5 @@
 import os
+import json
 import queue
 import threading
 import tkinter as tk
@@ -54,6 +55,8 @@ class DownloadCenter(tk.Tk):
         self.url = tk.StringVar()
         self.quality = tk.StringVar(value="بهترین کیفیت")
         self.cookies = tk.StringVar()
+        self.active_proxy = tk.StringVar(value="بدون پراکسی")
+        self.active_profile = None
         self.status = tk.StringVar(value="آماده دریافت لینک شما")
         self.stats = tk.StringVar(value="حجم: —   سرعت: —   زمان باقی‌مانده: —")
         self.progress = tk.DoubleVar(value=0)
@@ -133,6 +136,7 @@ class DownloadCenter(tk.Tk):
         self.stats_label.pack(anchor="e", pady=(0, 14))
         self._button(left, "شروع دانلود", self.start_download, primary=True).pack(fill="x")
         self._button(left, "پاک‌کردن صف", self.clear_log).pack(fill="x", pady=(8, 0))
+        self._button(left, "مدیریت Proxy / VLESS", self.manage_proxies).pack(fill="x", pady=(8, 0))
 
         right = tk.Frame(bottom, bg=PANEL, padx=18, pady=18)
         right.pack(side="right", fill="both", expand=True, padx=(0, 8))
@@ -151,6 +155,64 @@ class DownloadCenter(tk.Tk):
         folder = filedialog.askdirectory(initialdir=self.destination.get())
         if folder:
             self.destination.set(folder)
+
+    def manage_proxies(self):
+        dialog = tk.Toplevel(self)
+        dialog.title("مدیریت اتصال دانلود")
+        dialog.geometry("620x440")
+        dialog.configure(bg=PANEL)
+        dialog.transient(self)
+        dialog.grab_set()
+        self._label(dialog, "افزودن کانفیگ اتصال", 16, TEXT, True).pack(anchor="e", padx=22, pady=(20, 4))
+        self._label(dialog, "VLESS / VMess / Trojan / Shadowsocks یا HTTP / SOCKS", 10, MUTED).pack(anchor="e", padx=22)
+        box = tk.Text(dialog, height=8, bg="#0e1727", fg=TEXT, insertbackground=TEXT, relief="flat", wrap="word")
+        box.pack(fill="x", padx=22, pady=14)
+        name = tk.StringVar(value="اتصال من جدید")
+        tk.Entry(dialog, textvariable=name, bg="#1d2c43", fg=TEXT, insertbackground=TEXT, relief="flat", justify="right").pack(fill="x", padx=22, ipady=8)
+        profiles = self._load_profiles()
+        listbox = tk.Listbox(dialog, bg="#0e1727", fg=TEXT, selectbackground="#234879", relief="flat", height=5)
+        listbox.pack(fill="both", expand=True, padx=22, pady=14)
+        for profile in profiles:
+            listbox.insert("end", f"{profile['name']}  •  {profile['scheme']}")
+        def add_profile():
+            raw = box.get("1.0", "end").strip()
+            scheme = raw.split(":", 1)[0].lower() if ":" in raw else "unknown"
+            allowed = {"vless", "vmess", "trojan", "ss", "ssr", "http", "https", "socks5", "socks5h"}
+            if scheme not in allowed:
+                messagebox.showwarning("کانفیگ نامعتبر", "فرمت پشتیبانی‌نشده یا لینک خالی است.", parent=dialog)
+                return
+            profiles.append({"name": name.get().strip() or "اتصال جدید", "scheme": scheme, "value": raw})
+            self._save_profiles(profiles)
+            listbox.insert("end", f"{profiles[-1]['name']}  •  {scheme}")
+            box.delete("1.0", "end")
+        def activate_profile():
+            selected = listbox.curselection()
+            if not selected:
+                self.active_proxy.set("بدون پراکسی")
+            else:
+                profile = profiles[selected[0]]
+                self.active_proxy.set(profile["name"])
+                self.active_profile = profile
+                self.write_log(f"اتصال انتخاب شد: {profile['name']} ({profile['scheme']})")
+                if profile["scheme"] not in {"http", "https", "socks5", "socks5h"}:
+                    messagebox.showinfo("نیاز به هستهٔ اتصال", "این کانفیگ ذخیره شد. برای استفادهٔ واقعی VLESS/VMess/Trojan باید sing-box یا Xray روی سیستم نصب و اجرا شود.", parent=dialog)
+            dialog.destroy()
+        actions = tk.Frame(dialog, bg=PANEL); actions.pack(fill="x", padx=22, pady=(0, 18))
+        self._button(actions, "افزودن", add_profile, primary=True).pack(side="right", padx=(8, 0))
+        self._button(actions, "فعال‌سازی انتخاب‌شده", activate_profile).pack(side="right")
+        self._button(actions, "بستن", dialog.destroy).pack(side="left")
+
+    def _profiles_path(self):
+        return Path.home() / ".download-center-profiles.json"
+
+    def _load_profiles(self):
+        try:
+            return json.loads(self._profiles_path().read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+    def _save_profiles(self, profiles):
+        self._profiles_path().write_text(json.dumps(profiles, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def clear_log(self):
         self.log.configure(state="normal")
@@ -191,6 +253,8 @@ class DownloadCenter(tk.Tk):
         quality = self.quality.get()
         fmt = "bestaudio/best" if quality == "فقط صدا (MP3)" else ("bestvideo[height<=1080]+bestaudio/best" if quality == "بهترین کیفیت" else f"bestvideo[height<={quality.replace('p', '')}]+bestaudio/best")
         opts = {"outtmpl": str(Path(self.destination.get()) / "%(title)s.%(ext)s"), "format": fmt, "noplaylist": True, "merge_output_format": "mp4", "quiet": True, "progress_hooks": [self._progress]}
+        if self.active_profile and self.active_profile.get("scheme") in {"http", "https", "socks5", "socks5h"}:
+            opts["proxy"] = self.active_profile["value"]
         if quality == "فقط صدا (MP3)":
             opts.update({"postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}]})
         try:
