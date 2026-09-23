@@ -1,5 +1,6 @@
 import os
 import json
+import sys
 import queue
 import threading
 import tkinter as tk
@@ -49,6 +50,13 @@ class DownloadCenter(tk.Tk):
         self.geometry("980x680")
         self.minsize(820, 580)
         self.configure(bg=BG)
+        try:
+            icon_root = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+            icon_path = icon_root / "app_icon.png"
+            self.app_icon = tk.PhotoImage(file=str(icon_path))
+            self.iconphoto(True, self.app_icon)
+        except tk.TclError:
+            self.app_icon = None
         self.events = queue.Queue()
         self.running = False
         self.destination = tk.StringVar(value=str(Path.home() / "Downloads"))
@@ -137,6 +145,7 @@ class DownloadCenter(tk.Tk):
         self._button(left, "شروع دانلود", self.start_download, primary=True).pack(fill="x")
         self._button(left, "پاک‌کردن صف", self.clear_log).pack(fill="x", pady=(8, 0))
         self._button(left, "مدیریت Proxy / VLESS", self.manage_proxies).pack(fill="x", pady=(8, 0))
+        self._label(left, "ساخته شده توسط redcoweb.ir", 9, MUTED).pack(pady=(14, 0))
 
         right = tk.Frame(bottom, bg=PANEL, padx=18, pady=18)
         right.pack(side="right", fill="both", expand=True, padx=(0, 8))
