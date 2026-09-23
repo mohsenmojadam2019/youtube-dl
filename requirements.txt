@@ -1,0 +1,2 @@
+yt-dlp>=2025.1.0
+pyinstaller>=6.10.0
