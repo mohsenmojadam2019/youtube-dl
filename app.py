@@ -59,6 +59,8 @@ class DownloadCenter(tk.Tk):
             self.app_icon = None
         self.events = queue.Queue()
         self.running = False
+        self.download_queue = []
+        self.history = []
         self.destination = tk.StringVar(value=str(Path.home() / "Downloads"))
         self.url = tk.StringVar()
         self.quality = tk.StringVar(value="بهترین کیفیت")
@@ -115,6 +117,7 @@ class DownloadCenter(tk.Tk):
         entry.pack(side="right", fill="x", expand=True, ipady=12, padx=(0, 8))
         entry.focus_set()
         self._button(row, "چسباندن", self.paste_url).pack(side="right")
+        self._button(row, "افزودن به صف", self.add_to_queue, primary=True).pack(side="right", padx=(8, 0))
 
         options = tk.Frame(main, bg=BG)
         options.pack(fill="x", pady=16)
@@ -143,6 +146,7 @@ class DownloadCenter(tk.Tk):
         self.stats_label = self._label(left, self.stats.get(), 10, MUTED)
         self.stats_label.pack(anchor="e", pady=(0, 14))
         self._button(left, "شروع دانلود", self.start_download, primary=True).pack(fill="x")
+        self._button(left, "نمایش صف دانلود", self.show_queue).pack(fill="x", pady=(8, 0))
         self._button(left, "پاک‌کردن صف", self.clear_log).pack(fill="x", pady=(8, 0))
         self._button(left, "مدیریت Proxy / VLESS", self.manage_proxies).pack(fill="x", pady=(8, 0))
         self._label(left, "ساخته شده توسط redcoweb.ir", 9, MUTED).pack(pady=(14, 0))
@@ -230,6 +234,38 @@ class DownloadCenter(tk.Tk):
         self.progress.set(0)
         self.stats.set("حجم: —   سرعت: —   زمان باقی‌مانده: —")
 
+    def add_to_queue(self):
+        url = self.url.get().strip()
+        if not url:
+            messagebox.showwarning("لینک لازم است", "ابتدا لینک را وارد کنید.")
+            return
+        self.download_queue.append(url)
+        self.write_log(f"به صف اضافه شد ({len(self.download_queue)}): {url}")
+        self.url.set("")
+        self.status.set(f"{len(self.download_queue)} لینک در صف قرار دارد")
+
+    def show_queue(self):
+        dialog = tk.Toplevel(self)
+        dialog.title("صف دانلود")
+        dialog.geometry("650x380")
+        dialog.configure(bg=PANEL)
+        self._label(dialog, "صف دانلود", 17, TEXT, True).pack(anchor="e", padx=22, pady=(18, 8))
+        queue_box = tk.Listbox(dialog, bg="#0e1727", fg=TEXT, selectbackground="#234879", relief="flat", height=12)
+        queue_box.pack(fill="both", expand=True, padx=22)
+        for index, item in enumerate(self.download_queue, 1):
+            queue_box.insert("end", f"{index}. {item}")
+        actions = tk.Frame(dialog, bg=PANEL); actions.pack(fill="x", padx=22, pady=16)
+        self._button(actions, "حذف انتخاب‌شده", lambda: self.remove_queue_item(queue_box)).pack(side="right")
+        self._button(actions, "بستن", dialog.destroy).pack(side="left")
+
+    def remove_queue_item(self, box):
+        selected = box.curselection()
+        if selected:
+            self.download_queue.pop(selected[0])
+            box.delete(selected[0])
+            for index in range(selected[0], box.size()):
+                box.delete(index); box.insert(index, f"{index + 1}. {self.download_queue[index]}")
+
     def write_log(self, text):
         self.log.configure(state="normal")
         self.log.insert("end", text + "\n")
@@ -250,6 +286,8 @@ class DownloadCenter(tk.Tk):
             messagebox.showerror("وابستگی نصب نیست", "کتابخانه yt-dlp نصب نشده است.\n\npython -m pip install -r requirements.txt")
             return
         url = self.url.get().strip()
+        if not url and self.download_queue:
+            url = self.download_queue.pop(0)
         if not url:
             messagebox.showwarning("لینک لازم است", "لینک ویدئو یا پست را وارد کنید.")
             return
@@ -270,7 +308,7 @@ class DownloadCenter(tk.Tk):
             self.events.put(("log", "دانلود شروع شد..."))
             with yt_dlp.YoutubeDL(opts) as downloader:
                 downloader.download([url])
-            self.events.put(("done", "دانلود با موفقیت انجام شد"))
+            self.events.put(("done", "دانلود با موفقیت انجام شد", url))
         except Exception as exc:
             self.events.put(("error", str(exc)))
 
@@ -291,7 +329,12 @@ class DownloadCenter(tk.Tk):
                     self.progress.set(event[1]); self.status.set(f"در حال دانلود {event[2]}")
                     self.stats.set(f"حجم: {human_size(event[3])} / {human_size(event[4])}   سرعت: {human_size(event[5])}/s   زمان باقی‌مانده: {human_time(event[6])}")
                 elif event[0] == "log": self.write_log(event[1])
-                elif event[0] == "done": self.running = False; self.progress.set(100); self.status.set(event[1]); self.write_log(event[1]); messagebox.showinfo("تمام شد", event[1])
+                elif event[0] == "done":
+                    self.history.append(event[2]); self.progress.set(100); self.status.set(event[1]); self.write_log(event[1]); self.running = False
+                    if self.download_queue:
+                        self.start_download()
+                    else:
+                        messagebox.showinfo("تمام شد", event[1])
                 elif event[0] == "error": self.running = False; self.status.set("دانلود ناموفق بود"); self.write_log("خطا: " + event[1]); messagebox.showerror("خطا در دانلود", event[1])
         except queue.Empty:
             pass
