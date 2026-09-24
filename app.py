@@ -2,10 +2,32 @@ import os
 import json
 import sys
 import queue
+import socket
 import threading
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+import ctypes
+import shutil
 from pathlib import Path
+
+try:
+    import tkinter as tk
+    import tkinter.font as tkfont
+    from tkinter import filedialog, messagebox, ttk
+except ModuleNotFoundError:
+    tk_root = Path(__file__).resolve().parent / ".tkdeps" / "root"
+    if not tk_root.exists():
+        raise
+    py_root = tk_root / "usr" / "lib" / "python3.10"
+    sys.path[:0] = [str(py_root), str(py_root / "lib-dynload")]
+    os.environ.setdefault("TCL_LIBRARY", "/usr/share/tcltk/tcl8.6")
+    os.environ.setdefault("TK_LIBRARY", str(tk_root / "usr/share/tcltk/tk8.6"))
+    ctypes.CDLL(str(tk_root / "usr/lib/x86_64-linux-gnu/libtk8.6.so"), mode=ctypes.RTLD_GLOBAL)
+    ctypes.CDLL(str(tk_root / "usr/lib/libBLT.2.5.so.8.6"), mode=ctypes.RTLD_GLOBAL)
+    import tkinter as tk
+    import tkinter.font as tkfont
+    from tkinter import filedialog, messagebox, ttk
+
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 try:
     import yt_dlp
@@ -21,6 +43,22 @@ MUTED = "#8ea3bd"
 ACCENT = "#4f8cff"
 GREEN = "#20c997"
 RED = "#ff6b81"
+
+
+def fa(text):
+    """Shape Persian/Arabic text for Tk on Linux."""
+    if text is None:
+        return ""
+    value = str(text)
+    return get_display(arabic_reshaper.reshape(value))
+
+
+def pick_ui_font(root):
+    families = set(tkfont.families(root))
+    for family in ("Vazirmatn", "Noto Sans Arabic", "DejaVu Sans", "Ubuntu"):
+        if family in families:
+            return family
+    return "TkDefaultFont"
 
 
 def human_size(value):
@@ -50,6 +88,7 @@ class DownloadCenter(tk.Tk):
         self.geometry("980x680")
         self.minsize(820, 580)
         self.configure(bg=BG)
+        self.ui_font = pick_ui_font(self)
         try:
             icon_root = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
             icon_path = icon_root / "app_icon.png"
@@ -63,40 +102,73 @@ class DownloadCenter(tk.Tk):
         self.history = []
         self.destination = tk.StringVar(value=str(Path.home() / "Downloads"))
         self.url = tk.StringVar()
-        self.quality = tk.StringVar(value="بهترین کیفیت")
+        self.quality = tk.StringVar(value=fa("بهترین کیفیت"))
         self.cookies = tk.StringVar()
-        self.active_proxy = tk.StringVar(value="بدون پراکسی")
+        self.active_proxy = tk.StringVar(value=fa("تشخیص خودکار"))
         self.active_profile = None
-        self.status = tk.StringVar(value="آماده دریافت لینک شما")
-        self.stats = tk.StringVar(value="حجم: —   سرعت: —   زمان باقی‌مانده: —")
+        self.auto_proxy = None
+        self.status = tk.StringVar(value=fa("آماده دریافت لینک شما"))
+        self.stats = tk.StringVar(value=fa("حجم: —   سرعت: —   زمان باقی‌مانده: —"))
         self.progress = tk.DoubleVar(value=0)
         self._setup_style()
         self._build_ui()
+        self.auto_proxy = self._detect_local_proxy()
+        if self.auto_proxy:
+            self.active_proxy.set(fa(f"اتصال خودکار: {self.auto_proxy[0]}"))
+            self.write_log(f"پراکسی محلی شناسایی شد: {self.auto_proxy[0]}")
         self.after(100, self._drain_events)
 
+    def _detect_local_proxy(self):
+        candidates = [
+            ("Hiddify", "http://127.0.0.1:12334", 12334),
+            ("BPB / Hiddify CLI", "http://127.0.0.1:12444", 12444),
+            ("Clash", "http://127.0.0.1:7890", 7890),
+            ("Local SOCKS", "socks5://127.0.0.1:1080", 1080),
+        ]
+        for name, url, port in candidates:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.25):
+                    return name, url
+            except OSError:
+                continue
+        return None
+
+    def _set_status(self, text):
+        self.status.set(fa(text))
+
+    def _set_stats(self, text):
+        self.stats.set(fa(text))
+
     def _setup_style(self):
+        for named in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont"):
+            try:
+                tkfont.nametofont(named).configure(family=self.ui_font)
+            except tk.TclError:
+                pass
         style = ttk.Style(self)
         style.theme_use("clam")
         style.configure("TProgressbar", troughcolor="#22334d", background=ACCENT, borderwidth=0, thickness=12)
-        style.configure("Treeview", background=PANEL, fieldbackground=PANEL, foreground=TEXT, rowheight=34, borderwidth=0)
-        style.configure("Treeview.Heading", background=PANEL_2, foreground=MUTED, relief="flat")
+        style.configure("Treeview", background=PANEL, fieldbackground=PANEL, foreground=TEXT, rowheight=34, borderwidth=0, font=(self.ui_font, 10))
+        style.configure("Treeview.Heading", background=PANEL_2, foreground=MUTED, relief="flat", font=(self.ui_font, 10, "bold"))
+        style.configure("TCombobox", font=(self.ui_font, 10))
         style.map("Treeview", background=[("selected", "#234879")])
 
     def _label(self, parent, text, size=11, color=TEXT, bold=False):
-        return tk.Label(parent, text=text, bg=parent.cget("bg"), fg=color,
-                        font=("Segoe UI", size, "bold" if bold else "normal"))
+        return tk.Label(parent, text=fa(text), bg=parent.cget("bg"), fg=color,
+                        justify="right", anchor="e",
+                        font=(self.ui_font, size, "bold" if bold else "normal"))
 
     def _button(self, parent, text, command, primary=False):
-        return tk.Button(parent, text=text, command=command, bg=ACCENT if primary else PANEL_2,
+        return tk.Button(parent, text=fa(text), command=command, bg=ACCENT if primary else PANEL_2,
                          fg="white", activebackground="#6da2ff", activeforeground="white",
                          relief="flat", borderwidth=0, padx=18, pady=10,
-                         font=("Segoe UI", 10, "bold"), cursor="hand2")
+                         font=(self.ui_font, 10, "bold"), cursor="hand2")
 
     def _build_ui(self):
         header = tk.Frame(self, bg=BG)
         header.pack(fill="x", padx=34, pady=(28, 12))
         tk.Label(header, text="⬇", bg=ACCENT, fg="white", width=3, height=1,
-                 font=("Segoe UI", 22, "bold")).pack(side="right", padx=(0, 12))
+                 font=(self.ui_font, 22, "bold")).pack(side="right", padx=(0, 12))
         title = tk.Frame(header, bg=BG)
         title.pack(side="right")
         self._label(title, "دانلود سنتر", 24, TEXT, True).pack(anchor="e")
@@ -113,7 +185,7 @@ class DownloadCenter(tk.Tk):
         row.pack(fill="x")
         self._button(row, "دریافت اطلاعات", self.inspect, primary=False).pack(side="left", padx=(0, 8))
         entry = tk.Entry(row, textvariable=self.url, bg="#1d2c43", fg=TEXT, insertbackground=TEXT,
-                         relief="flat", justify="right", font=("Segoe UI", 12))
+                         relief="flat", justify="left", font=(self.ui_font, 12))
         entry.pack(side="right", fill="x", expand=True, ipady=12, padx=(0, 8))
         entry.focus_set()
         self._button(row, "چسباندن", self.paste_url).pack(side="right")
@@ -124,14 +196,17 @@ class DownloadCenter(tk.Tk):
         quality = tk.Frame(options, bg=PANEL, padx=18, pady=16)
         quality.pack(side="right", fill="both", expand=True, padx=(8, 0))
         self._label(quality, "کیفیت دانلود", 10, MUTED, True).pack(anchor="e")
-        ttk.Combobox(quality, textvariable=self.quality, values=["بهترین کیفیت", "1080p", "720p", "480p", "فقط صدا (MP3)"], state="readonly", justify="right").pack(fill="x", pady=(8, 0), ipady=5)
+        ttk.Combobox(quality, textvariable=self.quality,
+                     values=[fa("بهترین کیفیت"), "1080p", "720p", "480p", fa("فقط صدا (MP3)")],
+                     state="readonly", justify="right", font=(self.ui_font, 10)).pack(fill="x", pady=(8, 0), ipady=5)
         folder = tk.Frame(options, bg=PANEL, padx=18, pady=16)
         folder.pack(side="right", fill="both", expand=True, padx=(0, 8))
         self._label(folder, "مسیر ذخیره‌سازی", 10, MUTED, True).pack(anchor="e")
         frow = tk.Frame(folder, bg=PANEL)
         frow.pack(fill="x", pady=(8, 0))
         self._button(frow, "انتخاب", self.choose_folder).pack(side="left")
-        tk.Entry(frow, textvariable=self.destination, bg="#1d2c43", fg=TEXT, relief="flat", justify="right").pack(side="right", fill="x", expand=True, ipady=8, padx=(0, 8))
+        tk.Entry(frow, textvariable=self.destination, bg="#1d2c43", fg=TEXT, relief="flat", justify="left",
+                 font=(self.ui_font, 10)).pack(side="right", fill="x", expand=True, ipady=8, padx=(0, 8))
 
         bottom = tk.Frame(main, bg=BG)
         bottom.pack(fill="both", expand=True)
@@ -141,10 +216,12 @@ class DownloadCenter(tk.Tk):
         self.progress_bar = ttk.Progressbar(left, variable=self.progress, maximum=100)
         self.progress_bar.pack(fill="x", pady=(18, 8))
         self._label(left, "آماده دریافت لینک شما", 10, MUTED).pack(anchor="e")
-        self.status_label = self._label(left, self.status.get(), 11, TEXT)
-        self.status_label.pack(anchor="e", pady=(4, 18))
-        self.stats_label = self._label(left, self.stats.get(), 10, MUTED)
-        self.stats_label.pack(anchor="e", pady=(0, 14))
+        self.status_label = tk.Label(left, textvariable=self.status, bg=PANEL, fg=TEXT,
+                                     justify="right", anchor="e", font=(self.ui_font, 11))
+        self.status_label.pack(fill="x", pady=(4, 18))
+        self.stats_label = tk.Label(left, textvariable=self.stats, bg=PANEL, fg=MUTED,
+                                    justify="right", anchor="e", font=(self.ui_font, 10))
+        self.stats_label.pack(fill="x", pady=(0, 14))
         self._button(left, "شروع دانلود", self.start_download, primary=True).pack(fill="x")
         self._button(left, "نمایش صف دانلود", self.show_queue).pack(fill="x", pady=(8, 0))
         self._button(left, "پاک‌کردن صف", self.clear_log).pack(fill="x", pady=(8, 0))
@@ -154,7 +231,9 @@ class DownloadCenter(tk.Tk):
         right = tk.Frame(bottom, bg=PANEL, padx=18, pady=18)
         right.pack(side="right", fill="both", expand=True, padx=(0, 8))
         self._label(right, "گزارش فعالیت", 15, TEXT, True).pack(anchor="e")
-        self.log = tk.Text(right, bg="#0e1727", fg=MUTED, relief="flat", height=10, wrap="word", state="disabled", font=("Consolas", 9))
+        self.log = tk.Text(right, bg="#0e1727", fg=MUTED, relief="flat", height=10, wrap="word",
+                           state="disabled", font=(self.ui_font, 10))
+        self.log.tag_configure("rtl", justify="right")
         self.log.pack(fill="both", expand=True, pady=(12, 0))
         self.write_log("برنامه آماده است. یک لینک وارد کنید.")
 
@@ -162,7 +241,7 @@ class DownloadCenter(tk.Tk):
         try:
             self.url.set(self.clipboard_get())
         except tk.TclError:
-            self.status.set("متنی در کلیپ‌بورد نیست")
+            self._set_status("متنی در کلیپ‌بورد نیست")
 
     def choose_folder(self):
         folder = filedialog.askdirectory(initialdir=self.destination.get())
@@ -232,17 +311,17 @@ class DownloadCenter(tk.Tk):
         self.log.delete("1.0", "end")
         self.log.configure(state="disabled")
         self.progress.set(0)
-        self.stats.set("حجم: —   سرعت: —   زمان باقی‌مانده: —")
+        self._set_stats("حجم: —   سرعت: —   زمان باقی‌مانده: —")
 
     def add_to_queue(self):
         url = self.url.get().strip()
         if not url:
-            messagebox.showwarning("لینک لازم است", "ابتدا لینک را وارد کنید.")
+            messagebox.showwarning(fa("لینک لازم است"), fa("ابتدا لینک را وارد کنید."))
             return
         self.download_queue.append(url)
         self.write_log(f"به صف اضافه شد ({len(self.download_queue)}): {url}")
         self.url.set("")
-        self.status.set(f"{len(self.download_queue)} لینک در صف قرار دارد")
+        self._set_status(f"{len(self.download_queue)} لینک در صف قرار دارد")
 
     def show_queue(self):
         dialog = tk.Toplevel(self)
@@ -268,28 +347,28 @@ class DownloadCenter(tk.Tk):
 
     def write_log(self, text):
         self.log.configure(state="normal")
-        self.log.insert("end", text + "\n")
+        self.log.insert("end", fa(text) + "\n", "rtl")
         self.log.see("end")
         self.log.configure(state="disabled")
 
     def inspect(self):
         if not self.url.get().strip():
-            messagebox.showwarning("لینک لازم است", "لینک ویدئو یا پست را وارد کنید.")
+            messagebox.showwarning(fa("لینک لازم است"), fa("لینک ویدئو یا پست را وارد کنید."))
             return
         self.write_log("در حال بررسی لینک...")
-        self.status.set("در حال بررسی اطلاعات لینک")
+        self._set_status("در حال بررسی اطلاعات لینک")
 
     def start_download(self):
         if self.running:
             return
         if yt_dlp is None:
-            messagebox.showerror("وابستگی نصب نیست", "کتابخانه yt-dlp نصب نشده است.\n\npython -m pip install -r requirements.txt")
+            messagebox.showerror(fa("وابستگی نصب نیست"), fa("کتابخانه yt-dlp نصب نشده است.\n\npython -m pip install -r requirements.txt"))
             return
         url = self.url.get().strip()
         if not url and self.download_queue:
             url = self.download_queue.pop(0)
         if not url:
-            messagebox.showwarning("لینک لازم است", "لینک ویدئو یا پست را وارد کنید.")
+            messagebox.showwarning(fa("لینک لازم است"), fa("لینک ویدئو یا پست را وارد کنید."))
             return
         self.running = True
         self.progress.set(0)
@@ -298,11 +377,26 @@ class DownloadCenter(tk.Tk):
     def _download(self, url):
         Path(self.destination.get()).mkdir(parents=True, exist_ok=True)
         quality = self.quality.get()
-        fmt = "bestaudio/best" if quality == "فقط صدا (MP3)" else ("bestvideo[height<=1080]+bestaudio/best" if quality == "بهترین کیفیت" else f"bestvideo[height<={quality.replace('p', '')}]+bestaudio/best")
+        fmt = "bestaudio/best" if quality == fa("فقط صدا (MP3)") else ("bestvideo[height<=1080]+bestaudio/best" if quality == fa("بهترین کیفیت") else f"bestvideo[height<={quality.replace('p', '')}]+bestaudio/best")
         opts = {"outtmpl": str(Path(self.destination.get()) / "%(title)s.%(ext)s"), "format": fmt, "noplaylist": True, "merge_output_format": "mp4", "quiet": True, "progress_hooks": [self._progress]}
         if self.active_profile and self.active_profile.get("scheme") in {"http", "https", "socks5", "socks5h"}:
             opts["proxy"] = self.active_profile["value"]
-        if quality == "فقط صدا (MP3)":
+            self.events.put(("log", f"اتصال دانلود: {self.active_profile.get('name', 'Manual')}"))
+        else:
+            self.auto_proxy = self._detect_local_proxy()
+            if self.auto_proxy:
+                opts["proxy"] = self.auto_proxy[1]
+                self.events.put(("log", f"اتصال دانلود: {self.auto_proxy[0]}"))
+
+        if "youtube.com" in url or "youtu.be" in url:
+            chrome_profile = Path.home() / ".config" / "google-chrome"
+            if chrome_profile.exists():
+                opts["cookiesfrombrowser"] = ("chrome", None, None, None)
+            node_path = shutil.which("node")
+            if node_path:
+                opts["js_runtimes"] = {"node": {"path": node_path}}
+
+        if quality == fa("فقط صدا (MP3)"):
             opts.update({"postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}]})
         try:
             self.events.put(("log", "دانلود شروع شد..."))
@@ -326,16 +420,16 @@ class DownloadCenter(tk.Tk):
             while True:
                 event = self.events.get_nowait()
                 if event[0] == "progress":
-                    self.progress.set(event[1]); self.status.set(f"در حال دانلود {event[2]}")
-                    self.stats.set(f"حجم: {human_size(event[3])} / {human_size(event[4])}   سرعت: {human_size(event[5])}/s   زمان باقی‌مانده: {human_time(event[6])}")
+                    self.progress.set(event[1]); self._set_status(f"در حال دانلود {event[2]}")
+                    self._set_stats(f"حجم: {human_size(event[3])} / {human_size(event[4])}   سرعت: {human_size(event[5])}/s   زمان باقی‌مانده: {human_time(event[6])}")
                 elif event[0] == "log": self.write_log(event[1])
                 elif event[0] == "done":
-                    self.history.append(event[2]); self.progress.set(100); self.status.set(event[1]); self.write_log(event[1]); self.running = False
+                    self.history.append(event[2]); self.progress.set(100); self._set_status(event[1]); self.write_log(event[1]); self.running = False
                     if self.download_queue:
                         self.start_download()
                     else:
-                        messagebox.showinfo("تمام شد", event[1])
-                elif event[0] == "error": self.running = False; self.status.set("دانلود ناموفق بود"); self.write_log("خطا: " + event[1]); messagebox.showerror("خطا در دانلود", event[1])
+                        messagebox.showinfo(fa("تمام شد"), fa(event[1]))
+                elif event[0] == "error": self.running = False; self._set_status("دانلود ناموفق بود"); self.write_log("خطا: " + event[1]); messagebox.showerror(fa("خطا در دانلود"), event[1])
         except queue.Empty:
             pass
         self.after(100, self._drain_events)

@@ -1,0 +1,10 @@
+.venv/
+.tkdeps/
+__pycache__/
+*.pyc
+*.part
+app.py.bak-*
+requirements.txt.bak-*
+ui-test*.png
+ui-test*.xwd
+ui-window*.png
