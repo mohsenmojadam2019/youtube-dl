@@ -189,7 +189,8 @@ class DownloadCenter(tk.Tk):
         entry.pack(side="right", fill="x", expand=True, ipady=12, padx=(0, 8))
         entry.focus_set()
         self._button(row, "چسباندن", self.paste_url).pack(side="right")
-        self._button(row, "افزودن به صف", self.add_to_queue, primary=True).pack(side="right", padx=(8, 0))
+        self._button(row, "دانلود", self.start_download, primary=True).pack(side="right", padx=(8, 0))
+        self._button(row, "افزودن به صف", self.add_to_queue, primary=False).pack(side="right", padx=(8, 0))
 
         options = tk.Frame(main, bg=BG)
         options.pack(fill="x", pady=16)
@@ -388,13 +389,22 @@ class DownloadCenter(tk.Tk):
                 opts["proxy"] = self.auto_proxy[1]
                 self.events.put(("log", f"اتصال دانلود: {self.auto_proxy[0]}"))
 
-        if "youtube.com" in url or "youtu.be" in url:
-            chrome_profile = Path.home() / ".config" / "google-chrome"
-            if chrome_profile.exists():
-                opts["cookiesfrombrowser"] = ("chrome", None, None, None)
+        chrome_profile = Path.home() / ".config" / "google-chrome"
+        is_youtube = "youtube.com" in url or "youtu.be" in url
+        is_instagram = "instagram.com" in url
+
+        if (is_youtube or is_instagram) and chrome_profile.exists():
+            opts["cookiesfrombrowser"] = ("chrome", None, None, None)
+
+        if is_youtube:
             node_path = shutil.which("node")
             if node_path:
                 opts["js_runtimes"] = {"node": {"path": node_path}}
+
+        if is_instagram:
+            if quality != fa("فقط صدا (MP3)"):
+                opts["format"] = "bestvideo+bestaudio/best"
+            self.events.put(("log", "لینک اینستاگرام شناسایی شد؛ دانلود Reel / Post / Story با yt-dlp"))
 
         if quality == fa("فقط صدا (MP3)"):
             opts.update({"postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}]})
