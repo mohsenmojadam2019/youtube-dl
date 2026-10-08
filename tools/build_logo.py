@@ -1,0 +1,71 @@
+from pathlib import Path
+from PIL import Image, ImageDraw, ImageFilter
+N=768
+OUT=Path(__file__).resolve().parents[1]/"extension/icons"
+OUT.mkdir(parents=True,exist_ok=True)
+canvas=Image.new("RGBA",(N,N))
+def grad(top,bottom):
+    im=Image.new("RGBA",(N,N))
+    d=ImageDraw.Draw(im)
+    for y in range(N):
+        t=y/(N-1)
+        c=tuple(round(a*(1-t)+b*t) for a,b in zip(top,bottom))
+        d.line((0,y,N,y),fill=c)
+    return im
+def mask():
+    return Image.new("L",(N,N))
+def paint(m,a,b):
+    canvas.alpha_composite(Image.composite(grad(a,b),Image.new("RGBA",(N,N)),m))
+def shadow(m):
+    blurred=m.filter(ImageFilter.GaussianBlur(18))
+    black=Image.new("RGBA",(N,N),(0,0,0,150))
+    layer=Image.composite(black,Image.new("RGBA",(N,N)),blurred)
+    shifted=Image.new("RGBA",(N,N))
+    shifted.paste(layer,(7,11))
+    canvas.alpha_composite(shifted)
+ring=mask()
+d=ImageDraw.Draw(ring)
+d.rounded_rectangle((32,30,736,738),radius=160,fill=255)
+shadow(ring)
+paint(ring,(255,235,135,255),(156,74,14,255))
+rim=mask()
+ImageDraw.Draw(rim).rounded_rectangle((47,45,721,723),radius=153,fill=255)
+paint(rim,(230,147,39,255),(254,210,114,255))
+face=mask()
+ImageDraw.Draw(face).rounded_rectangle((65,62,703,706),radius=140,fill=255)
+paint(face,(10,87,189,255),(2,12,54,255))
+shine=Image.new("RGBA",(N,N))
+g=ImageDraw.Draw(shine)
+g.ellipse((-180,-270,950,370),fill=(80,149,238,65))
+g.ellipse((-200,365,450,1015),fill=(0,4,25,100))
+canvas.alpha_composite(Image.composite(shine,Image.new("RGBA",(N,N)),face))
+play=mask()
+g=ImageDraw.Draw(play)
+points=[(226,157),(591,344),(591,399),(239,592),(218,567),(218,188),(226,157)]
+g.line(points,fill=255,width=63,joint="curve")
+for x,y in points:g.ellipse((x-31,y-31,x+31,y+31),fill=255)
+shadow(play)
+paint(play,(255,226,110,255),(164,82,19,255))
+tray=mask()
+g=ImageDraw.Draw(tray)
+g.line([(167,481),(167,564),(191,595),(577,595),(601,564),(601,481)],
+       fill=255,width=72,joint="curve")
+for x in (167,601):g.ellipse((x-36,445,x+36,517),fill=255)
+shadow(tray)
+paint(tray,(255,249,173,255),(197,104,18,255))
+arrow=mask()
+g=ImageDraw.Draw(arrow)
+g.rounded_rectangle((330,185,438,410),radius=21,fill=255)
+g.polygon([(246,378),(522,378),(384,539)],fill=255)
+shadow(arrow)
+paint(arrow,(255,251,182,255),(241,158,27,255))
+g=ImageDraw.Draw(canvas)
+g.line([(350,208),(350,389),(275,389)],fill=(255,252,197,180),width=9)
+g.line([(284,409),(384,520),(484,409)],fill=(255,239,155,220),width=7)
+g.rounded_rectangle((42,40,726,730),radius=160,outline=(255,238,156,165),width=5)
+g.rounded_rectangle((63,60,705,708),radius=141,outline=(31,111,226,140),width=4)
+canvas.save(OUT/"source-premium.png",optimize=True)
+for side in (16,32,48,128):
+    dest=OUT/(str(side)+".png")
+    canvas.resize((side,side),Image.LANCZOS).save(dest,optimize=True)
+    print(side,dest.stat().st_size)

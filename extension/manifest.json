@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Download Center - دانلودر فارسی",
   "short_name": "Download Center",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "دانلود ویدئو و صدا با موتور محلی yt-dlp",
   "permissions": [
     "activeTab",
