@@ -7,3 +7,13 @@ app.py.bak-*
 requirements.txt.bak-*
 ui-*.png
 ui-*.xwd
+extension/config.js
+*.log
+chrome-shot.png
+extension-screen.png
+extension-manager*.png
+extensions-open.png
+extension-details.png
+
+extension-connected.png
+extension-popup-test.png

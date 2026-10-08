@@ -21,3 +21,18 @@ python app.py
 - Ubuntu: `chmod +x build_ubuntu.sh && ./build_ubuntu.sh` → `dist/DownloadCenter`
 
 برای تبدیل ویدئو به MP3، نصب بودن `ffmpeg` روی سیستم ضروری است. Instagram ممکن است برای لینک‌های خصوصی یا محدود به فایل cookies/login نیاز داشته باشد.
+
+
+## افزونه Chrome
+
+نسخه افزونه Chrome به برنامه دسکتاپ اضافه شده است. رابط افزونه در پوشه
+extension/ و سرویس محلی در bridge/server.py قرار دارد.
+
+- اجرا: bash start.sh
+- نصب افزونه: chrome://extensions → Developer mode → Load unpacked → extension/
+- پشتیبانی: وب‌سایت‌های قابل پشتیبانی توسط yt-dlp و لینک‌های مستقیم
+- انتخاب کیفیت‌های 1080p، 720p، 480p و 360p و استخراج صدا به MP3
+- مدیریت صف دانلود و لغو دانلودهای فعال
+- ذخیره پیش‌فرض: ~/Downloads/DownloadCenter
+
+جزئیات و محدودیت‌ها: docs/CHROME.md

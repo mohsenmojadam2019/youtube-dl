@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مرکز دانلود</title><link rel="stylesheet" href="popup.css"></head>
+<body><main>
+<header><div class="logo">↓</div><div><h1>مرکز دانلود</h1><p>دانلود هوشمند ویدئو و صدا</p></div><span id="health">بررسی...</span></header>
+<section>
+<label for="url">لینک محتوا</label>
+<textarea id="url" rows="2" dir="ltr" placeholder="https://youtube.com/watch?v=..."></textarea>
+<div class="actions"><button id="tabUrl" class="quiet">لینک همین صفحه</button><button id="inspect" class="quiet">بررسی لینک</button></div>
+<div id="info" hidden></div>
+<div class="options"><div><label for="quality">کیفیت</label><select id="quality">
+<option value="best">بهترین کیفیت</option><option value="1080">1080p</option>
+<option value="720">720p</option><option value="480">480p</option><option value="360">360p</option></select></div>
+<div><label for="mode">فرمت</label><select id="mode"><option value="video">ویدئو (MP4)</option><option value="mp3">صدا (MP3)</option></select></div></div>
+<button class="primary" id="download">شروع دانلود ↓</button><p id="message" role="status"></p>
+</section>
+<section><div class="sectionTitle"><b>رسانه‌های مستقیم صفحه</b><button class="link" id="scan">اسکن صفحه</button></div>
+<div id="found" class="muted">برای پیدا کردن ویدئوها و فایل‌های مستقیم، اسکن کنید.</div></section>
+<section><div class="sectionTitle"><b>دانلودهای اخیر</b><button class="link" id="refresh">تازه‌سازی</button></div><div id="jobs" class="muted">در حال بارگذاری...</div></section>
+<footer>ذخیره در Downloads/DownloadCenter — فقط محتوای مجاز</footer>
+</main><script src="config.js"></script><script src="popup.js"></script></body></html>
